@@ -1,129 +1,64 @@
-# 🧬 ProteinViz
+# ProteinViz
 
-Publication-quality protein 3D structure visualization with domain annotations.
+Reproducible PDB/mmCIF visualization using PyMOL: cartoon + surface, optional residue-range colors and labels, an editable PyMOL session, and a JSON provenance record.
 
-Renders PDB/mmCIF files into beautiful cartoon + surface overlay figures with labeled domain annotations — ready for journal submission.
+[中文说明](README.zh-CN.md)
 
-![Earth Tones](examples/preview_earth.png)
+## Install
 
-## ✨ Features
+Python 3.11 is recommended (the validated Windows environment uses Python 3.11).
 
-- 🎨 **5 color schemes**: Earth Tones, Soft Pastels, Jewel Tones, Rainbow, Highlight
-- 🫧 **Cartoon + Surface overlay** — see both secondary structure and molecular surface
-- 🏷️ **Automatic domain annotations** — labeled with leader lines
-- 📐 **Publication-ready** — 300 DPI, clean white background
-- 🔧 **Supports PDB & mmCIF** — works with AlphaFold2, AlphaFold3, experimental structures
-
-## 🚀 Quick Start
-
-### Install Dependencies
-
-```bash
-pip install matplotlib Pillow numpy
-
-# PyMOL (required for 3D rendering)
-conda install -c conda-forge pymol-open-source
-# or: sudo apt install pymol
+```sh
+python -m venv .venv
+# Windows: .venv\Scripts\activate
+# Linux/macOS: source .venv/bin/activate
+python -m pip install -r requirements.txt
 ```
 
-### Render a Structure
+PyMOL wheels are platform-dependent. If pip cannot resolve PyMOL, use an environment from conda-forge with `pymol-open-source`, `biopython`, `matplotlib`, `pillow` and `numpy`. See [PyMOL upstream](https://github.com/schrodinger/pymol-open-source). `requirements-lock.txt` records the Windows validation environment; it is not a universal cross-platform lock.
 
-```bash
-# Basic usage (default: earth tones scheme)
-python protein_viz.py structure.pdb
+## Usage
 
-# Choose a color scheme
-python protein_viz.py structure.cif --scheme pastel
-python protein_viz.py structure.cif --scheme jewel
-python protein_viz.py structure.cif --scheme rainbow
-
-# Adjust surface transparency (0=opaque, 1=invisible)
-python protein_viz.py structure.pdb --transparency 0.55
-
-# Custom domain ranges
-python protein_viz.py structure.pdb --domains '{"AB":[1,190],"C":[191,316],"D":[317,365],"E":[366,603]}'
-
-# Just the 3D render, no labels
-python protein_viz.py structure.pdb --no-annotate
-```
-
-### List Available Schemes
-
-```bash
+```sh
 python protein_viz.py --list-schemes
+python protein_viz.py examples/data/1ubq.cif --inspect
+python protein_viz.py examples/data/1ubq.cif --domains @examples/domains_1ubq.json -o outputs/1ubq.png
+python protein_viz.py examples/data/1ubq.pdb --scheme rainbow --no-annotate -o outputs/rainbow.png
+python protein_viz.py examples/data/1ubq.pdb --domains @examples/domains_1ubq.json --scheme highlight --highlight-domain N-region -o outputs/highlight.png
 ```
 
-## 🎨 Color Schemes
+The example splits ubiquitin into **illustrative residue ranges**, not experimentally established domains. See [example provenance](examples/README.md).
 
-| Scheme | Description |
-|--------|-------------|
-| `earth` | Morandi earth tones — dusty rose, warm sand, sage, slate blue |
-| `pastel` | Soft pastels — lavender, gold, teal, coral |
-| `jewel` | Deep jewel tones — violet, amber, teal, crimson |
-| `rainbow` | Classic N→C rainbow gradient |
-| `highlight` | Gray structure with red-highlighted target domain |
+By default a structure is rendered in neutral gray with no inferred domains. Supply `--domains` for colored ranges. The legacy AgEcR1 intervals (AB 1–190, C 191–316, D 317–365, E 366–603) are available only through `--preset agecr1`; they must be checked against the actual input protein. ProteinViz visualizes an existing model; it neither predicts folds nor validates biological function, domain assignments or model confidence.
 
-## 📖 For AI Agents
+- First coordinate model only; author chain/residue numbering for mmCIF.
+- Single protein chain is chosen automatically; multiple chains require `--chain`.
+- Missing endpoints, overlapping intervals, invalid settings and mismatched residue identities cause an error. Interior numbering gaps are recorded in JSON; no missing residues are reconstructed.
+- Alternate conformers: blank/A atoms are retained; inputs incompatible with this policy are rejected when CA identities differ. Review unusual alternate conformers before use.
+- `--width` and `--height` specify the raw 3D render in pixels. Annotated output adds a left gutter of `max(width*0.25, 260)` pixels. `--dpi` defaults to 300.
+- Every render produces `.png`, `.raw.png`, `.pse`, and `.json`. Existing outputs require `--overwrite`.
+- Camera rotations are relative to PyMOL's initial orientation, not a promise to reproduce an older figure's camera. Final camera parameters are saved.
 
-This tool is designed to be called by AI agents (like Hermes Agent) for automated protein figure generation:
+Labels are placed outside the structure and connected to real CA atoms near each range centroid. Anchors use the saved PyMOL orthoscopic camera. They are visual references, not a claim that the indicated atom lies on the visible surface. Crowded labels should still be reviewed manually.
+
+## Python API
 
 ```python
-# Python API
 from protein_viz import render
-
-render(
-    input_file="structure.pdb",
-    output_file="figure.png",
-    scheme="earth",
-    transparency=0.55,
-    annotate=True
-)
+render("examples/data/1ubq.cif", "outputs/api.png",
+       domains={"N-region": [1, 35], "C-region": [36, 76]},
+       chain="A", width=1600, height=1200, dpi=300)
 ```
 
-### Hermes Agent Skill
+The API raises exceptions instead of exiting the caller. Palette names remain `earth`, `pastel`, `jewel`, `rainbow`, and `highlight`; custom range names are supported. Highlighting requires a supplied range name (legacy `E` is accepted when present).
 
-To install as a Hermes Agent skill, add to `~/.hermes/skills/protein-viz/SKILL.md`:
+## Validation
 
-```yaml
----
-name: protein-viz
-description: "Render publication-quality protein 3D structure figures with domain annotations."
-version: 1.0.0
-author: Zikai Zhou
-license: MIT
----
+```sh
+python -m pip install pytest
+python -m pytest -q
 ```
 
-Then place `protein_viz.py` in the skill directory and invoke via:
-```
-python ~/.hermes/skills/protein-viz/protein_viz.py input.pdb --scheme earth
-```
+Tests include real PyMOL renders from both PDB/mmCIF, non-A chains, editable-session reopening, DPI/dimensions, first-model and insertion-code parsing, output protection, invalid parameters and projection calibration against ray-traced markers in portrait/landscape viewports.
 
-## 🏗️ Requirements
-
-- Python 3.8+
-- PyMOL (open-source)
-- matplotlib
-- Pillow
-- numpy
-
-## 📋 Default Domain Ranges
-
-The default domains are for **Aphis gossypii Ecdysone Receptor-like Protein (AgEcR1)**:
-
-| Domain | Residues | Function |
-|--------|----------|----------|
-| A/B | 1–190 | Transactivation domain |
-| C | 191–316 | DNA-binding domain (DBD) |
-| D | 317–365 | Hinge region |
-| E | 366–603 | Ligand-binding domain (LBD), pesticide target |
-
-Use `--domains` to customize for your protein.
-
-## 📜 License
-
-MIT License — Copyright (c) 2026 Zikai Zhou
-
-## 🙏 Acknowledgments
-
-Built with [PyMOL](https://pymol.org/) and [Matplotlib](https://matplotlib.org/). Inspired by publication figures in Nature, Science, and Cell structural biology papers.
+MIT License — Copyright (c) 2026 Zikai Zhou.
